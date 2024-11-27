@@ -263,19 +263,19 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 6 */
     if (Buf[*Len - 1] == 0x08) {
-		if (cdc_buffer_len > 0)
-			cdc_buffer_len--;
-		goto cdc_receive_exit;
-	}
+        if (cdc_buffer_len > 0)
+            cdc_buffer_len--;
+        goto cdc_receive_exit;
+    }
 
     memcpy(cdc_buffer + cdc_buffer_len, Buf, *Len);
     cdc_buffer_len += *Len;
-	if (Buf[*Len - 1] == 0x0d) {
-		if (!usb_msg_locked) {
-        	memcpy(usb_msg, cdc_buffer, cdc_buffer_len);
-        	usb_msg[cdc_buffer_len - 1] = 0x00;
-        	usb_msg_len = cdc_buffer_len;
-		}
+    if (Buf[*Len - 1] == 0x0d) {
+        if (!usb_msg_locked) {
+            memcpy(usb_msg, cdc_buffer, cdc_buffer_len);
+            usb_msg[cdc_buffer_len - 1] = 0x00;
+            usb_msg_len = cdc_buffer_len;
+        }
         cdc_buffer_len = 0;
     }
 

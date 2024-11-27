@@ -19,10 +19,12 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "usb_device.h"
+#include "usbd_cdc_if.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+static inline uint8_t send_to_usb(char *);
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -41,6 +43,7 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+TIM_HandleTypeDef htim2;
 
 /* USER CODE BEGIN PV */
 
@@ -49,7 +52,7 @@
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-void delay(uint32_t);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -64,6 +67,7 @@ bool usb_msg_locked = false;
 uint8_t pg_value = 0;
 
 bool led_enabled = true;
+bool reset_timer = false;
 
 #define PG_MASK_BIT0    0x01
 #define PG_MASK_BIT1    0x02
@@ -74,7 +78,7 @@ bool led_enabled = true;
 #define PG_MASK_BIT6    0x40
 #define PG_MASK_BIT7    0x80
 
-#define RESET_TIME_MS   500
+#define RESET_TIME_MS   100
 
 
 void pg_set_value(uint8_t value) {
@@ -92,13 +96,8 @@ void pg_set_value(uint8_t value) {
 
 void reset_target() {
     HAL_GPIO_WritePin(TRESET_GPIO_Port, TRESET_Pin, GPIO_PIN_SET);
-    delay(RESET_TIME_MS);
+    HAL_Delay(RESET_TIME_MS);
     HAL_GPIO_WritePin(TRESET_GPIO_Port, TRESET_Pin, GPIO_PIN_RESET);
-}
-
-void delay(uint32_t num_ms) {
-    uint32_t init = uwTick;
-    while (uwTick - init < num_ms);
 }
 
 /**
@@ -156,6 +155,13 @@ void process_cmd(uint8_t *usb_msg, uint16_t usb_msg_len) {
     }
 }
 
+static inline uint8_t send_to_usb(char *buf) {
+    char dest[strlen(buf) + 3];
+    strcpy(dest, buf);
+    strcat(dest, "\r\n");
+    return CDC_Transmit_FS((uint8_t *) dest, strlen(dest));
+}
+
 /**
   * @brief  The application entry point.
   * @retval int
@@ -186,7 +192,11 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USB_DEVICE_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
+  //HAL_TIM_Base_Start_IT(&htim2);
+  uint32_t timer_val;
+  char display_timer[50];
 
   /* USER CODE END 2 */
 
@@ -198,13 +208,16 @@ int main(void)
         if (led_enabled)
             HAL_GPIO_TogglePin(GPIOC, LD5_Pin);
 
+        if (reset_timer) {
+			reset_target();
+            send_to_usb("Timer reset");
+            reset_timer = false;
+        }
+
         pg_set_value(pg_value);
         //for (uint32_t i=0; i<500000; i++);
-        HAL_GPIO_WritePin(TRESET_GPIO_Port, TRESET_Pin, GPIO_PIN_SET);
-        delay(100);
         HAL_GPIO_TogglePin(PGCLK_GPIO_Port, PGCLK_Pin);
-        HAL_GPIO_WritePin(TRESET_GPIO_Port, TRESET_Pin, GPIO_PIN_RESET);
-        delay(200);
+        //HAL_Delay(200);
         /* USER CODE BEGIN 3 */
         if (usb_msg_len > 0) {
             usb_msg_locked = true;
@@ -212,6 +225,10 @@ int main(void)
             usb_msg_len = 0;
             usb_msg_locked = false;
         }
+
+        //timer_val = __HAL_TIM_GET_COUNTER(&htim2);
+        //sprintf(display_timer, "Timer value: %ld", timer_val);
+        //send_to_usb(display_timer);
     }
   /* USER CODE END 3 */
 }
@@ -261,6 +278,61 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_SlaveConfigTypeDef sSlaveConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 4800 - 1;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 1000 - 1;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sSlaveConfig.SlaveMode = TIM_SLAVEMODE_TRIGGER;
+  sSlaveConfig.InputTrigger = TIM_TS_ETRF;
+  sSlaveConfig.TriggerPolarity = TIM_TRIGGERPOLARITY_NONINVERTED;
+  sSlaveConfig.TriggerPrescaler = TIM_TRIGGERPRESCALER_DIV1;
+  sSlaveConfig.TriggerFilter = 0;
+  if (HAL_TIM_SlaveConfigSynchro(&htim2, &sSlaveConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_ENABLE;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+
 }
 
 /**
@@ -352,6 +424,14 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+    send_to_usb("timer???");
+    if (htim == &htim2) {
+        send_to_usb("timer!!!");
+    }
+}
 
 /* USER CODE END 4 */
 
