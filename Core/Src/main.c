@@ -20,11 +20,15 @@
 #include "main.h"
 #include "usb_device.h"
 #include "usbd_cdc_if.h"
+#include "stm32f0xx_ll_tim.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+//static inline uint8_t send_to_usb(char *);
 static inline uint8_t send_to_usb(char *);
+static inline void pg_set_value(uint8_t);
+static inline void pg_set_value_fast(uint8_t);
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -61,10 +65,15 @@ static void MX_TIM2_Init(void);
 /* USER CODE BEGIN 0 */
 
 /* USER CODE END 0 */
+
+#define RESET_TIME_MS   100
+#define PGCLK_TIME_MS   1
+#define PG_VOLTAGE_FS   0xff
+
 uint8_t usb_msg[USB_BUFFER_SIZE];
 uint16_t usb_msg_len = 0;
 bool usb_msg_locked = false;
-uint8_t pg_value = 0;
+uint8_t pg_value = PG_VOLTAGE_FS;
 
 bool led_enabled = true;
 bool reset_timer = false;
@@ -78,11 +87,27 @@ bool reset_timer = false;
 #define PG_MASK_BIT6    0x40
 #define PG_MASK_BIT7    0x80
 
-#define RESET_TIME_MS   100
+#define GPIOB_VALUE_CFG(value) ((value & 0xf0) >> 1)
+#define GPIOD_VALUE_CFG(value) ((value & 0x08) >> 1)
+#define GPIOC_VALUE_CFG(value) ((value & 0x07) << 10)
 
+#define GPIOB_BSRR ((volatile uint32_t *) &GPIOB->BSRR)
+#define GPIOD_BSRR ((volatile uint32_t *) &GPIOD->BSRR)
+#define GPIOC_BSRR ((volatile uint32_t *) &GPIOC->BSRR)
 
-void pg_set_value(uint8_t value) {
+inline void pg_set_value_fast(uint8_t value) {
+    // Clk: PB7
+    // Data: PB6, PB5, PB4, PB3, PD2, PC12, PC11, PC10
+    *GPIOB_BSRR = GPIOB_VALUE_CFG(value) | (GPIOB_VALUE_CFG(~value) << 16);
+    *GPIOD_BSRR = GPIOD_VALUE_CFG(value) | (GPIOD_VALUE_CFG(~value) << 16);
+    *GPIOC_BSRR = GPIOC_VALUE_CFG(value) | (GPIOC_VALUE_CFG(~value) << 16);
 
+    // Generate a  pulse on the PGCLK pin
+    GPIOB->BSRR = (uint32_t)PGCLK_Pin;
+    GPIOB->BRR  = (uint32_t)PGCLK_Pin;
+}
+
+inline void pg_set_value(uint8_t value) {
     HAL_GPIO_WritePin(PG0_GPIO_Port, PG0_Pin, (GPIO_PinState)(value & PG_MASK_BIT0));
     HAL_GPIO_WritePin(PG1_GPIO_Port, PG1_Pin, (GPIO_PinState)(value & PG_MASK_BIT1));
     HAL_GPIO_WritePin(PG2_GPIO_Port, PG2_Pin, (GPIO_PinState)(value & PG_MASK_BIT2));
@@ -91,6 +116,9 @@ void pg_set_value(uint8_t value) {
     HAL_GPIO_WritePin(PG5_GPIO_Port, PG5_Pin, (GPIO_PinState)(value & PG_MASK_BIT5));
     HAL_GPIO_WritePin(PG6_GPIO_Port, PG6_Pin, (GPIO_PinState)(value & PG_MASK_BIT6));
     HAL_GPIO_WritePin(PG7_GPIO_Port, PG7_Pin, (GPIO_PinState)(value & PG_MASK_BIT7));
+
+    // Generate a  pulse on the PGCLK pin
+    HAL_GPIO_TogglePin(PGCLK_GPIO_Port, PGCLK_Pin);
     HAL_GPIO_TogglePin(PGCLK_GPIO_Port, PGCLK_Pin);
 }
 
@@ -115,6 +143,7 @@ void process_cmd_voltage(uint8_t *usb_msg, uint16_t usb_msg_len) {
         return;
 
     pg_value = (HEX_TO_BYTE(usb_msg[2]) << 4) + HEX_TO_BYTE(usb_msg[3]);
+    pg_set_value_fast(pg_value);
 }
 
 /**
@@ -155,11 +184,25 @@ void process_cmd(uint8_t *usb_msg, uint16_t usb_msg_len) {
     }
 }
 
-static inline uint8_t send_to_usb(char *buf) {
+//static inline uint8_t send_to_usb(char *buf) {
+inline uint8_t send_to_usb(char *buf) {
     char dest[strlen(buf) + 3];
     strcpy(dest, buf);
     strcat(dest, "\r\n");
     return CDC_Transmit_FS((uint8_t *) dest, strlen(dest));
+}
+
+void generate_glitch() {
+    pg_set_value_fast(0x00);
+    pg_set_value_fast(PG_VOLTAGE_FS);
+}
+
+void print_timer_value() {
+    char display_timer[50];
+    uint32_t timer_val;
+    timer_val = __HAL_TIM_GET_COUNTER(&htim2);
+    sprintf(display_timer, "Timer: %ld", timer_val);
+    send_to_usb(display_timer);
 }
 
 /**
@@ -188,15 +231,13 @@ int main(void)
   /* USER CODE BEGIN SysInit */
 
   /* USER CODE END SysInit */
-
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USB_DEVICE_Init();
   MX_TIM2_Init();
+
+  pg_set_value(pg_value);
   /* USER CODE BEGIN 2 */
-  //HAL_TIM_Base_Start_IT(&htim2);
-  uint32_t timer_val;
-  char display_timer[50];
 
   /* USER CODE END 2 */
 
@@ -214,10 +255,6 @@ int main(void)
             reset_timer = false;
         }
 
-        pg_set_value(pg_value);
-        //for (uint32_t i=0; i<500000; i++);
-        HAL_GPIO_TogglePin(PGCLK_GPIO_Port, PGCLK_Pin);
-        //HAL_Delay(200);
         /* USER CODE BEGIN 3 */
         if (usb_msg_len > 0) {
             usb_msg_locked = true;
@@ -226,9 +263,7 @@ int main(void)
             usb_msg_locked = false;
         }
 
-        //timer_val = __HAL_TIM_GET_COUNTER(&htim2);
-        //sprintf(display_timer, "Timer value: %ld", timer_val);
-        //send_to_usb(display_timer);
+        HAL_Delay(100);
     }
   /* USER CODE END 3 */
 }
@@ -300,9 +335,9 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 4800 - 1;
+  htim2.Init.Prescaler = 48 - 1;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 1000 - 1;
+  htim2.Init.Period = 1e6 - 1;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -330,6 +365,11 @@ static void MX_TIM2_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN TIM2_Init 2 */
+  /* Enable the TIM Update Interrupt */
+  LL_TIM_ClearFlag_UPDATE(htim2.Instance);
+  __HAL_TIM_ENABLE_IT(&htim2, TIM_IT_UPDATE);
+  /* Set One Pulse Mode to avoid automatic reload */
+  htim2.Instance->CR1 |= TIM_CR1_OPM;
 
   /* USER CODE END TIM2_Init 2 */
 
@@ -427,9 +467,8 @@ static void MX_GPIO_Init(void)
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-    send_to_usb("timer???");
     if (htim == &htim2) {
-        send_to_usb("timer!!!");
+        generate_glitch();
     }
 }
 
