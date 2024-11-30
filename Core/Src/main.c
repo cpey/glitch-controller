@@ -29,6 +29,8 @@
 static inline uint8_t send_to_usb(char *);
 static inline void pg_set_value(uint8_t);
 static inline void pg_set_value_fast(uint8_t);
+static inline void pg_sig_set_high();
+static inline void pg_sig_set_low();
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -38,6 +40,7 @@ static inline void pg_set_value_fast(uint8_t);
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define PG_DAC_BYPASS
 
 /* USER CODE END PD */
 
@@ -95,6 +98,7 @@ bool reset_timer = false;
 #define GPIOD_BSRR ((volatile uint32_t *) &GPIOD->BSRR)
 #define GPIOC_BSRR ((volatile uint32_t *) &GPIOC->BSRR)
 
+
 inline void pg_set_value_fast(uint8_t value) {
     // Clk: PB7
     // Data: PB6, PB5, PB4, PB3, PD2, PC12, PC11, PC10
@@ -122,6 +126,14 @@ inline void pg_set_value(uint8_t value) {
     HAL_GPIO_TogglePin(PGCLK_GPIO_Port, PGCLK_Pin);
 }
 
+inline void pg_sig_set_high() {
+    PGSIG_GPIO_Port->BSRR = (uint32_t)PGSIG_Pin;
+}
+
+inline void pg_sig_set_low() {
+    PGSIG_GPIO_Port->BRR  = (uint32_t)PGSIG_Pin;
+}
+
 void reset_target() {
     HAL_GPIO_WritePin(TRESET_GPIO_Port, TRESET_Pin, GPIO_PIN_SET);
     HAL_Delay(RESET_TIME_MS);
@@ -147,20 +159,41 @@ void process_cmd_voltage(uint8_t *usb_msg, uint16_t usb_msg_len) {
 }
 
 /**
- * cmd: ' v 0x??' -> 8 chars
+ * cmd: '?' -> 1 chars
  * 
  */
-void process_cmd_set(uint8_t *usb_msg, uint16_t usb_msg_len) {
-    if (usb_msg_len < 8)
+void process_cmd_signal(uint8_t *usb_msg, uint16_t usb_msg_len) {
+    if (usb_msg_len < 1)
         return;
+
+    if (usb_msg[0] != '0' && usb_msg[0] != '1')
+        return;
+
+    if (usb_msg[0] == '0') {
+        pg_sig_set_low();
+    } else {
+        pg_sig_set_high();
+    }
+}
+
+void process_cmd_set(uint8_t *usb_msg, uint16_t usb_msg_len) {
 
     uint8_t arg = usb_msg[1];
     
     switch (arg) {
-        case 'v':
+        case 'v': /* ' v 0x??' -> 8 chars */
+            if (usb_msg_len < 8)
+                return;
             if (usb_msg[2] != ' ')
                 return;
             process_cmd_voltage(usb_msg + 3, usb_msg_len - 3);
+            break;
+        case 's': /* ' s ?' -> 5 chars */
+            if (usb_msg_len < 5)
+                return;
+            if (usb_msg[2] != ' ')
+                return;
+            process_cmd_signal(usb_msg + 3, usb_msg_len - 3);
             break;
         default:
             break;
@@ -193,8 +226,13 @@ inline uint8_t send_to_usb(char *buf) {
 }
 
 void generate_glitch() {
+#ifdef PG_DAC_BYPASS
+    pg_sig_set_low();
+    pg_sig_set_high();
+#else
     pg_set_value_fast(0x00);
     pg_set_value_fast(PG_VOLTAGE_FS);
+#endif
 }
 
 void print_timer_value() {
@@ -237,6 +275,7 @@ int main(void)
   MX_TIM2_Init();
 
   pg_set_value(pg_value);
+  pg_sig_set_high();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -404,7 +443,7 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, PG4_Pin|PG5_Pin|PG6_Pin|PG7_Pin
-                          |PGCLK_Pin, GPIO_PIN_RESET);
+                          |PGCLK_Pin|PGSIG_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
@@ -441,9 +480,9 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(PG3_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PG4_Pin PG5_Pin PG6_Pin PG7_Pin
-                           PGCLK_Pin */
+                           PGCLK_Pin PGSIG_Pin */
   GPIO_InitStruct.Pin = PG4_Pin|PG5_Pin|PG6_Pin|PG7_Pin
-                          |PGCLK_Pin;
+                          |PGCLK_Pin|PGSIG_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
@@ -454,6 +493,9 @@ static void MX_GPIO_Init(void)
 
   /**/
   HAL_I2CEx_EnableFastModePlus(SYSCFG_CFGR1_I2C_FMP_PB7);
+
+  /**/
+  HAL_I2CEx_EnableFastModePlus(SYSCFG_CFGR1_I2C_FMP_PB8);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI0_1_IRQn, 0, 0);

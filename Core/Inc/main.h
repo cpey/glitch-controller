@@ -112,6 +112,8 @@ void Error_Handler(void);
 #define PG7_GPIO_Port GPIOB
 #define PGCLK_Pin GPIO_PIN_7
 #define PGCLK_GPIO_Port GPIOB
+#define PGSIG_Pin GPIO_PIN_8
+#define PGSIG_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 
