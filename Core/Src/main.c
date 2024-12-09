@@ -200,9 +200,19 @@ void process_cmd_set(uint8_t *usb_msg, uint16_t usb_msg_len) {
     }
 }
 
+void process_cmd_run() {
+#ifdef PG_DAC_BYPASS
+    pg_set_value(pg_value);
+#else
+    pg_sig_set_high();
+#endif
+}
+
 /**
- * cmd: 's v 0x??' -> 7 chars
- * 
+ * cmd: 
+ * 's v 0x??' -> 7 chars -- Set DAC input value
+ * 's s ?'    -> 6 char  -- Set power-glitcher output voltage level (PG_DAC_BYPASS mode)
+ * 'r'        -> 4 char  -- Run next test
  */
 void process_cmd(uint8_t *usb_msg, uint16_t usb_msg_len) {
     if (!usb_msg_len) 
@@ -211,6 +221,9 @@ void process_cmd(uint8_t *usb_msg, uint16_t usb_msg_len) {
     switch (cmd) {
         case 's':
             process_cmd_set(usb_msg + 1, usb_msg_len - 1);
+            break;
+        case 'r':
+            process_cmd_run();
             break;
         default:
             break;
@@ -274,8 +287,6 @@ int main(void)
   MX_USB_DEVICE_Init();
   MX_TIM2_Init();
 
-  pg_set_value(pg_value);
-  pg_sig_set_high();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
