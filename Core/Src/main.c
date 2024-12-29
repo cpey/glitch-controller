@@ -59,7 +59,7 @@ TIM_HandleTypeDef htim2;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_TIM2_Init(void);
+static void MX_TIM2_Init(uint32_t);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -69,8 +69,8 @@ static void MX_TIM2_Init(void);
 
 /* USER CODE END 0 */
 
+#define GLITCH_DELAY_MS 1000
 #define RESET_TIME_MS   100
-#define PGCLK_TIME_MS   1
 #define PG_VOLTAGE_FS   0xff
 
 uint8_t usb_msg[USB_BUFFER_SIZE];
@@ -176,6 +176,22 @@ void process_cmd_signal(uint8_t *usb_msg, uint16_t usb_msg_len) {
     }
 }
 
+/**
+ * cmd: '????' -> up to 5 chars
+ * 
+ */
+void process_cmd_timer(uint8_t *usb_msg, uint16_t usb_msg_len) {
+    if (usb_msg[0] == '-')
+        return;
+
+    uint32_t delay = strtol((char *) usb_msg, NULL, 10);
+    MX_TIM2_Init(delay);
+
+    char msg[25];
+    sprintf(msg, "Srecv: %lu", delay);
+    send_to_usb(msg);
+}
+
 void process_cmd_set(uint8_t *usb_msg, uint16_t usb_msg_len) {
 
     uint8_t arg = usb_msg[1];
@@ -195,24 +211,27 @@ void process_cmd_set(uint8_t *usb_msg, uint16_t usb_msg_len) {
                 return;
             process_cmd_signal(usb_msg + 3, usb_msg_len - 3);
             break;
+        case 't': /* ' t ????' -> 8 chars (max) */
+            if (usb_msg_len < 5 || usb_msg_len > 8)
+                return;
+            if (usb_msg[2] != ' ')
+                return;
+            process_cmd_timer(usb_msg + 3, usb_msg_len - 3);
+            break;
         default:
             break;
     }
 }
 
 void process_cmd_run() {
-#ifdef PG_DAC_BYPASS
-    pg_set_value(pg_value);
-#else
-    pg_sig_set_high();
-#endif
+    reset_timer = true;
 }
 
 /**
  * cmd: 
- * 's v 0x??' -> 7 chars -- Set DAC input value
+ * 's v 0x??' -> 9 chars -- Set DAC input value
  * 's s ?'    -> 6 char  -- Set power-glitcher output voltage level (PG_DAC_BYPASS mode)
- * 'r'        -> 4 char  -- Run next test
+ * 'r'        -> 2 char  -- Run next test
  */
 void process_cmd(uint8_t *usb_msg, uint16_t usb_msg_len) {
     if (!usb_msg_len) 
@@ -242,6 +261,7 @@ void generate_glitch() {
 #ifdef PG_DAC_BYPASS
     pg_sig_set_low();
     pg_sig_set_high();
+    send_to_usb("glitched");
 #else
     pg_set_value_fast(0x00);
     pg_set_value_fast(PG_VOLTAGE_FS);
@@ -285,9 +305,10 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USB_DEVICE_Init();
-  MX_TIM2_Init();
+  MX_TIM2_Init(GLITCH_DELAY_MS);
 
   /* USER CODE BEGIN 2 */
+  pg_sig_set_high();
 
   /* USER CODE END 2 */
 
@@ -313,7 +334,7 @@ int main(void)
             usb_msg_locked = false;
         }
 
-        HAL_Delay(100);
+        HAL_Delay(1);
     }
   /* USER CODE END 3 */
 }
@@ -370,7 +391,7 @@ void SystemClock_Config(void)
   * @param None
   * @retval None
   */
-static void MX_TIM2_Init(void)
+static void MX_TIM2_Init(uint32_t period_ms)
 {
 
   /* USER CODE BEGIN TIM2_Init 0 */
@@ -387,7 +408,7 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 48 - 1;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 1e6 - 1;
+  htim2.Init.Period = (period_ms * 1e3) - 1;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
