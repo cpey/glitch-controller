@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "math.h"
 #include "usb_device.h"
 #include "usbd_cdc_if.h"
 #include "stm32f0xx_ll_tim.h"
@@ -59,7 +60,7 @@ TIM_HandleTypeDef htim2;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_TIM2_Init(uint32_t);
+static void MX_TIM2_Init(uint32_t, uint32_t);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -69,9 +70,12 @@ static void MX_TIM2_Init(uint32_t);
 
 /* USER CODE END 0 */
 
-#define GLITCH_DELAY_MS 1000
-#define RESET_TIME_MS   100
-#define PG_VOLTAGE_FS   0xff
+#define GLITCH_DELAY_MS         1000
+#define GLITCH_DELAY_US         0
+#define GLITCH_DELAY_US_LENGTH  3
+#define GLITCH_DELAY_MS_LENGTH  4
+#define RESET_TIME_MS           100
+#define PG_VOLTAGE_FS           0xff
 
 uint8_t usb_msg[USB_BUFFER_SIZE];
 uint16_t usb_msg_len = 0;
@@ -177,18 +181,38 @@ void process_cmd_signal(uint8_t *usb_msg, uint16_t usb_msg_len) {
 }
 
 /**
- * cmd: '????' -> up to 5 chars
- * 
+ * cmd: 
+ * ms    -- '????'     -> up to 5 chars
+ * ms.us -- '????.???' -> up to 9 chars
  */
 void process_cmd_timer(uint8_t *usb_msg, uint16_t usb_msg_len) {
+    char msg[64];
+    uint32_t delay_us = 0;
+
     if (usb_msg[0] == '-')
         return;
 
-    uint32_t delay = strtol((char *) usb_msg, NULL, 10);
-    MX_TIM2_Init(delay);
+    char *ptr = strchr((char *) usb_msg, '.');
+    if (ptr != NULL) {
+        uint8_t len = (char *) usb_msg + usb_msg_len - ptr - 2;
+        if (len > GLITCH_DELAY_US_LENGTH) {
+            sprintf(msg, "Invalid decimal fraction length.");
+            send_to_usb(msg);
+            return;
+        }
+        delay_us = strtol((char *) ptr + 1, NULL, 10);
+    }
 
-    char msg[25];
-    sprintf(msg, "Srecv: %lu", delay);
+    uint32_t delay_ms = strtol((char *) usb_msg, NULL, 10);
+    if (delay_ms > pow(10, GLITCH_DELAY_MS_LENGTH)) {
+        sprintf(msg, "Invalid integer part length.");
+        send_to_usb(msg);
+        return;
+    }
+    __HAL_TIM_DISABLE_IT(&htim2, TIM_IT_UPDATE);
+    MX_TIM2_Init(delay_ms, delay_us);
+
+    sprintf(msg, "Set timer period: %lu ms, %lu us", delay_ms, delay_us);
     send_to_usb(msg);
 }
 
@@ -211,8 +235,9 @@ void process_cmd_set(uint8_t *usb_msg, uint16_t usb_msg_len) {
                 return;
             process_cmd_signal(usb_msg + 3, usb_msg_len - 3);
             break;
-        case 't': /* ' t ????' -> 8 chars (max) */
-            if (usb_msg_len < 5 || usb_msg_len > 8)
+        case 't': /* ' t ????.???' -> 12 chars (max) */
+                  /* ' t ?'        -> 5 chars (min) */
+            if (usb_msg_len < 5 || usb_msg_len > 12)
                 return;
             if (usb_msg[2] != ' ')
                 return;
@@ -305,7 +330,7 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USB_DEVICE_Init();
-  MX_TIM2_Init(GLITCH_DELAY_MS);
+  MX_TIM2_Init(GLITCH_DELAY_MS, GLITCH_DELAY_US);
 
   /* USER CODE BEGIN 2 */
   pg_sig_set_high();
@@ -391,7 +416,7 @@ void SystemClock_Config(void)
   * @param None
   * @retval None
   */
-static void MX_TIM2_Init(uint32_t period_ms)
+static void MX_TIM2_Init(uint32_t period_ms, uint32_t period_us)
 {
 
   /* USER CODE BEGIN TIM2_Init 0 */
@@ -408,7 +433,7 @@ static void MX_TIM2_Init(uint32_t period_ms)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 48 - 1;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = (period_ms * 1e3) - 1;
+  htim2.Init.Period = (period_ms * 1e3) + period_us - 1;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
