@@ -1,5 +1,7 @@
 #include "main.h"
 #include "serial.h"
+#include "glitcher.h"
+#include "controller.h"
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>

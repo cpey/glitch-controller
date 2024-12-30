@@ -1,6 +1,8 @@
 "./Core/Src/main.o"
 "./Core/Src/comm.o"
 "./Core/Src/serial.o"
+"./Core/Src/glitcher.o"
+"./Core/Src/controller.o"
 "./Core/Src/stm32f0xx_hal_msp.o"
 "./Core/Src/stm32f0xx_it.o"
 "./Core/Src/syscalls.o"
