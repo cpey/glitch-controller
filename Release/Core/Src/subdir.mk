@@ -6,6 +6,8 @@
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
 ../Core/Src/main.c \
+../Core/Src/comm.c \
+../Core/Src/serial.c \
 ../Core/Src/stm32f0xx_hal_msp.c \
 ../Core/Src/stm32f0xx_it.c \
 ../Core/Src/syscalls.c \
@@ -14,6 +16,8 @@ C_SRCS += \
 
 OBJS += \
 ./Core/Src/main.o \
+./Core/Src/comm.o \
+./Core/Src/serial.o \
 ./Core/Src/stm32f0xx_hal_msp.o \
 ./Core/Src/stm32f0xx_it.o \
 ./Core/Src/syscalls.o \

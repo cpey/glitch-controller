@@ -44,6 +44,12 @@ extern bool usb_msg_locked;
 #define IS_VALID_HEX(val) (((val) >= 0x30 && (val) <= 0x39) || \
 					(HEX_TO_BYTE_A_TO_F(val) >= 10 && HEX_TO_BYTE_A_TO_F(val) <= 15))
 		
+void MX_TIM2_Init(uint32_t, uint32_t);
+
+#define GLITCH_DELAY_US_LENGTH  3
+#define GLITCH_DELAY_MS_LENGTH  4
+
+extern TIM_HandleTypeDef htim2;
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -116,6 +122,34 @@ void Error_Handler(void);
 #define PGSIG_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
+
+#define GPIOB_BSRR ((volatile uint32_t *) &GPIOB->BSRR)
+#define GPIOD_BSRR ((volatile uint32_t *) &GPIOD->BSRR)
+#define GPIOC_BSRR ((volatile uint32_t *) &GPIOC->BSRR)
+
+#define GPIOB_VALUE_CFG(value) ((value & 0xf0) >> 1)
+#define GPIOD_VALUE_CFG(value) ((value & 0x08) >> 1)
+#define GPIOC_VALUE_CFG(value) ((value & 0x07) << 10)
+
+inline void pg_set_value_fast(uint8_t value) {
+    // Clk: PB7
+    // Data: PB6, PB5, PB4, PB3, PD2, PC12, PC11, PC10
+    *GPIOB_BSRR = GPIOB_VALUE_CFG(value) | (GPIOB_VALUE_CFG(~value) << 16);
+    *GPIOD_BSRR = GPIOD_VALUE_CFG(value) | (GPIOD_VALUE_CFG(~value) << 16);
+    *GPIOC_BSRR = GPIOC_VALUE_CFG(value) | (GPIOC_VALUE_CFG(~value) << 16);
+
+    // Generate a  pulse on the PGCLK pin
+    GPIOB->BSRR = (uint32_t)PGCLK_Pin;
+    GPIOB->BRR  = (uint32_t)PGCLK_Pin;
+}
+
+inline void pg_sig_set_high() {
+    PGSIG_GPIO_Port->BSRR = (uint32_t)PGSIG_Pin;
+}
+
+inline void pg_sig_set_low() {
+    PGSIG_GPIO_Port->BRR  = (uint32_t)PGSIG_Pin;
+}
 
 /* USER CODE END Private defines */
 

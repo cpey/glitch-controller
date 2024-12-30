@@ -18,20 +18,18 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "math.h"
+#include "comm.h"
+#include "serial.h"
 #include "usb_device.h"
-#include "usbd_cdc_if.h"
 #include "stm32f0xx_ll_tim.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
-//static inline uint8_t send_to_usb(char *);
-static inline uint8_t send_to_usb(char *);
 static inline void pg_set_value(uint8_t);
-static inline void pg_set_value_fast(uint8_t);
-static inline void pg_sig_set_high();
-static inline void pg_sig_set_low();
+extern inline void pg_set_value_fast(uint8_t);
+extern inline void pg_sig_set_high();
+extern inline void pg_sig_set_low();
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -60,7 +58,6 @@ TIM_HandleTypeDef htim2;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_TIM2_Init(uint32_t, uint32_t);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -72,15 +69,12 @@ static void MX_TIM2_Init(uint32_t, uint32_t);
 
 #define GLITCH_DELAY_MS         1000
 #define GLITCH_DELAY_US         0
-#define GLITCH_DELAY_US_LENGTH  3
-#define GLITCH_DELAY_MS_LENGTH  4
 #define RESET_TIME_MS           100
 #define PG_VOLTAGE_FS           0xff
 
 uint8_t usb_msg[USB_BUFFER_SIZE];
 uint16_t usb_msg_len = 0;
 bool usb_msg_locked = false;
-uint8_t pg_value = PG_VOLTAGE_FS;
 
 bool led_enabled = true;
 bool reset_timer = false;
@@ -93,27 +87,6 @@ bool reset_timer = false;
 #define PG_MASK_BIT5    0x20
 #define PG_MASK_BIT6    0x40
 #define PG_MASK_BIT7    0x80
-
-#define GPIOB_VALUE_CFG(value) ((value & 0xf0) >> 1)
-#define GPIOD_VALUE_CFG(value) ((value & 0x08) >> 1)
-#define GPIOC_VALUE_CFG(value) ((value & 0x07) << 10)
-
-#define GPIOB_BSRR ((volatile uint32_t *) &GPIOB->BSRR)
-#define GPIOD_BSRR ((volatile uint32_t *) &GPIOD->BSRR)
-#define GPIOC_BSRR ((volatile uint32_t *) &GPIOC->BSRR)
-
-
-inline void pg_set_value_fast(uint8_t value) {
-    // Clk: PB7
-    // Data: PB6, PB5, PB4, PB3, PD2, PC12, PC11, PC10
-    *GPIOB_BSRR = GPIOB_VALUE_CFG(value) | (GPIOB_VALUE_CFG(~value) << 16);
-    *GPIOD_BSRR = GPIOD_VALUE_CFG(value) | (GPIOD_VALUE_CFG(~value) << 16);
-    *GPIOC_BSRR = GPIOC_VALUE_CFG(value) | (GPIOC_VALUE_CFG(~value) << 16);
-
-    // Generate a  pulse on the PGCLK pin
-    GPIOB->BSRR = (uint32_t)PGCLK_Pin;
-    GPIOB->BRR  = (uint32_t)PGCLK_Pin;
-}
 
 inline void pg_set_value(uint8_t value) {
     HAL_GPIO_WritePin(PG0_GPIO_Port, PG0_Pin, (GPIO_PinState)(value & PG_MASK_BIT0));
@@ -130,156 +103,10 @@ inline void pg_set_value(uint8_t value) {
     HAL_GPIO_TogglePin(PGCLK_GPIO_Port, PGCLK_Pin);
 }
 
-inline void pg_sig_set_high() {
-    PGSIG_GPIO_Port->BSRR = (uint32_t)PGSIG_Pin;
-}
-
-inline void pg_sig_set_low() {
-    PGSIG_GPIO_Port->BRR  = (uint32_t)PGSIG_Pin;
-}
-
 void reset_target() {
     HAL_GPIO_WritePin(TRESET_GPIO_Port, TRESET_Pin, GPIO_PIN_SET);
     HAL_Delay(RESET_TIME_MS);
     HAL_GPIO_WritePin(TRESET_GPIO_Port, TRESET_Pin, GPIO_PIN_RESET);
-}
-
-/**
- * cmd: '0x??' -> 4 chars
- * 
- */
-void process_cmd_voltage(uint8_t *usb_msg, uint16_t usb_msg_len) {
-    if (usb_msg_len < 4)
-        return;
-
-    if (usb_msg[0] != '0' || usb_msg[1] != 'x')
-        return;
-
-    if (!(IS_VALID_HEX(usb_msg[2]) && IS_VALID_HEX(usb_msg[3])))
-        return;
-
-    pg_value = (HEX_TO_BYTE(usb_msg[2]) << 4) + HEX_TO_BYTE(usb_msg[3]);
-    pg_set_value_fast(pg_value);
-}
-
-/**
- * cmd: '?' -> 1 chars
- * 
- */
-void process_cmd_signal(uint8_t *usb_msg, uint16_t usb_msg_len) {
-    if (usb_msg_len < 1)
-        return;
-
-    if (usb_msg[0] != '0' && usb_msg[0] != '1')
-        return;
-
-    if (usb_msg[0] == '0') {
-        pg_sig_set_low();
-    } else {
-        pg_sig_set_high();
-    }
-}
-
-/**
- * cmd: 
- * ms    -- '????'     -> up to 5 chars
- * ms.us -- '????.???' -> up to 9 chars
- */
-void process_cmd_timer(uint8_t *usb_msg, uint16_t usb_msg_len) {
-    char msg[64];
-    uint32_t delay_us = 0;
-
-    if (usb_msg[0] == '-')
-        return;
-
-    char *ptr = strchr((char *) usb_msg, '.');
-    if (ptr != NULL) {
-        uint8_t len = (char *) usb_msg + usb_msg_len - ptr - 2;
-        if (len > GLITCH_DELAY_US_LENGTH) {
-            sprintf(msg, "Invalid decimal fraction length.");
-            send_to_usb(msg);
-            return;
-        }
-        delay_us = strtol((char *) ptr + 1, NULL, 10);
-    }
-
-    uint32_t delay_ms = strtol((char *) usb_msg, NULL, 10);
-    if (delay_ms > pow(10, GLITCH_DELAY_MS_LENGTH)) {
-        sprintf(msg, "Invalid integer part length.");
-        send_to_usb(msg);
-        return;
-    }
-    __HAL_TIM_DISABLE_IT(&htim2, TIM_IT_UPDATE);
-    MX_TIM2_Init(delay_ms, delay_us);
-
-    sprintf(msg, "Set timer period: %lu ms, %lu us", delay_ms, delay_us);
-    send_to_usb(msg);
-}
-
-void process_cmd_set(uint8_t *usb_msg, uint16_t usb_msg_len) {
-
-    uint8_t arg = usb_msg[1];
-    
-    switch (arg) {
-        case 'v': /* ' v 0x??' -> 8 chars */
-            if (usb_msg_len < 8)
-                return;
-            if (usb_msg[2] != ' ')
-                return;
-            process_cmd_voltage(usb_msg + 3, usb_msg_len - 3);
-            break;
-        case 's': /* ' s ?' -> 5 chars */
-            if (usb_msg_len < 5)
-                return;
-            if (usb_msg[2] != ' ')
-                return;
-            process_cmd_signal(usb_msg + 3, usb_msg_len - 3);
-            break;
-        case 't': /* ' t ????.???' -> 12 chars (max) */
-                  /* ' t ?'        -> 5 chars (min) */
-            if (usb_msg_len < 5 || usb_msg_len > 12)
-                return;
-            if (usb_msg[2] != ' ')
-                return;
-            process_cmd_timer(usb_msg + 3, usb_msg_len - 3);
-            break;
-        default:
-            break;
-    }
-}
-
-void process_cmd_run() {
-    reset_timer = true;
-}
-
-/**
- * cmd: 
- * 's v 0x??' -> 9 chars -- Set DAC input value
- * 's s ?'    -> 6 char  -- Set power-glitcher output voltage level (PG_DAC_BYPASS mode)
- * 'r'        -> 2 char  -- Run next test
- */
-void process_cmd(uint8_t *usb_msg, uint16_t usb_msg_len) {
-    if (!usb_msg_len) 
-        return;
-    uint8_t cmd = usb_msg[0];
-    switch (cmd) {
-        case 's':
-            process_cmd_set(usb_msg + 1, usb_msg_len - 1);
-            break;
-        case 'r':
-            process_cmd_run();
-            break;
-        default:
-            break;
-    }
-}
-
-//static inline uint8_t send_to_usb(char *buf) {
-inline uint8_t send_to_usb(char *buf) {
-    char dest[strlen(buf) + 3];
-    strcpy(dest, buf);
-    strcat(dest, "\r\n");
-    return CDC_Transmit_FS((uint8_t *) dest, strlen(dest));
 }
 
 void generate_glitch() {
@@ -416,7 +243,7 @@ void SystemClock_Config(void)
   * @param None
   * @retval None
   */
-static void MX_TIM2_Init(uint32_t period_ms, uint32_t period_us)
+void MX_TIM2_Init(uint32_t period_ms, uint32_t period_us)
 {
 
   /* USER CODE BEGIN TIM2_Init 0 */
