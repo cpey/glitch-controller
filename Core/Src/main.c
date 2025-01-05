@@ -1,4 +1,3 @@
-/* USER CODE BEGIN Header */
 /**
   ******************************************************************************
   * @file           : main.c
@@ -15,8 +14,6 @@
   *
   ******************************************************************************
   */
-/* USER CODE END Header */
-/* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "comm.h"
 #include "serial.h"
@@ -25,42 +22,7 @@
 #include "usb_device.h"
 #include "stm32f0xx_ll_tim.h"
 
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
-
-/* USER CODE END Includes */
-
-/* Private typedef -----------------------------------------------------------*/
-/* USER CODE BEGIN PTD */
-
-/* USER CODE END PTD */
-
-/* Private define ------------------------------------------------------------*/
-/* USER CODE BEGIN PD */
-
-/* USER CODE END PD */
-
-/* Private macro -------------------------------------------------------------*/
-/* USER CODE BEGIN PM */
-
-/* USER CODE END PM */
-
-/* Private variables ---------------------------------------------------------*/
-
-/* USER CODE BEGIN PV */
-
-/* USER CODE END PV */
-
-/* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-/* USER CODE BEGIN PFP */
-
-/* USER CODE END PFP */
-
-/* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */
-
-/* USER CODE END 0 */
 
 uint8_t usb_msg[USB_BUFFER_SIZE];
 uint16_t usb_msg_len = 0;
@@ -83,38 +45,17 @@ void print_timer_value() {
   */
 int main(void)
 {
+    /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+    HAL_Init();
+    /* Configure the system clock */
+    SystemClock_Config();
+    /* Initialize all configured peripherals */
+    MX_GPIO_Init();
+    MX_USB_DEVICE_Init();
+    MX_TIM2_Init(GLITCH_DELAY_MS, GLITCH_DELAY_US);
 
-  /* USER CODE BEGIN 1 */
+    pg_sig_set_high();
 
-  /* USER CODE END 1 */
-
-  /* MCU Configuration--------------------------------------------------------*/
-
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
-
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
-
-  /* Configure the system clock */
-  SystemClock_Config();
-
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_USB_DEVICE_Init();
-  MX_TIM2_Init(GLITCH_DELAY_MS, GLITCH_DELAY_US);
-
-  /* USER CODE BEGIN 2 */
-  pg_sig_set_high();
-
-  /* USER CODE END 2 */
-
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
     while (1)
     {
         /* USER CODE END WHILE */
@@ -137,7 +78,6 @@ int main(void)
 
         HAL_Delay(1);
     }
-  /* USER CODE END 3 */
 }
 
 

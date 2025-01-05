@@ -82,7 +82,6 @@ void process_cmd_timer(uint8_t *usb_msg, uint16_t usb_msg_len) {
 }
 
 void process_cmd_set(uint8_t *usb_msg, uint16_t usb_msg_len) {
-
     uint8_t arg = usb_msg[1];
     
     switch (arg) {
@@ -113,15 +112,27 @@ void process_cmd_set(uint8_t *usb_msg, uint16_t usb_msg_len) {
     }
 }
 
-void process_cmd_run() {
-    reset_timer = true;
+void process_cmd_run(uint8_t *usb_msg, uint16_t usb_msg_len) {
+    uint8_t arg = usb_msg[1];
+
+    switch (arg) {
+        case 'g':
+            reset_timer = true;
+            break;
+        case 'c':
+            reset_target();
+            reset_timer = true;
+            break;
+        default:
+            break;
+    }
 }
 
 /**
  * cmd: 
  * 's v 0x??' -> 9 chars -- Set DAC input value
  * 's s ?'    -> 6 char  -- Set power-glitcher output voltage level (PG_DAC_BYPASS mode)
- * 'r'        -> 2 char  -- Run next test
+ * 'r ?'      -> 4 char  -- Run command
  */
 void process_cmd(uint8_t *usb_msg, uint16_t usb_msg_len) {
     if (!usb_msg_len) 
@@ -132,7 +143,7 @@ void process_cmd(uint8_t *usb_msg, uint16_t usb_msg_len) {
             process_cmd_set(usb_msg + 1, usb_msg_len - 1);
             break;
         case 'r':
-            process_cmd_run();
+            process_cmd_run(usb_msg + 1, usb_msg_len - 1);
             break;
         default:
             break;
