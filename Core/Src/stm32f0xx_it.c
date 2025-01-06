@@ -97,6 +97,14 @@ void TIM2_IRQHandler(void)
 }
 
 /**
+  * @brief This function handles TIM15 global interrupt.
+  */
+void TIM15_IRQHandler(void)
+{
+  HAL_TIM_IRQHandler(&htim15);
+}
+
+/**
   * @brief This function handles USB global interrupt / USB wake-up interrupt through EXTI line 18.
   */
 void USB_IRQHandler(void)

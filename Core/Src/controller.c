@@ -1,9 +1,16 @@
+#include <math.h>
+
 #include "controller.h"
 #include "glitcher.h"
+#include "serial.h"
 
 #define RESET_TIME_MS           100
 
+void MX_TIM2_Init(uint32_t, uint32_t);
+void MX_TIM15_Init(uint8_t, uint8_t, uint32_t);
+
 TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim15;
 
 void reset_target() {
     HAL_GPIO_WritePin(TRESET_GPIO_Port, TRESET_Pin, GPIO_PIN_SET);
@@ -11,10 +18,41 @@ void reset_target() {
     HAL_GPIO_WritePin(TRESET_GPIO_Port, TRESET_Pin, GPIO_PIN_RESET);
 }
 
+void ctrl_TIM2_init(uint32_t period_ms, uint32_t period_us) {
+    MX_TIM2_Init(period_ms, period_us);
+}
+
+void ctrl_TIM15_init(uint32_t period_ms, uint32_t period_us) {
+    uint32_t counter = 0;
+    if (period_ms <= CTRL_TIM15_MAX_PERIOD_MS) {
+        MX_TIM15_Init(period_ms, period_us, counter);
+        return;
+    }
+
+    uint8_t period_search = CTRL_TIM15_MAX_PERIOD_MS;
+    while ((period_ms % period_search != 0)  && period_search) {
+        period_search -=1;
+    }
+    counter = (period_ms / period_search) - 1;
+    period_us = period_us / counter;
+    MX_TIM15_Init(period_search, period_us, counter);
+}
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
+    static int level = 0;
     if (htim == &htim2) {
         generate_glitch();
+    } else if (htim == &htim15) {
+        if (!level) {
+            HAL_GPIO_WritePin(TRESET_GPIO_Port, TRESET_Pin, GPIO_PIN_SET);
+            level = 1;
+        } else {
+            HAL_GPIO_WritePin(TRESET_GPIO_Port, TRESET_Pin, GPIO_PIN_RESET);
+            level = 0;
+        }
+        //HAL_TIM_Base_Stop_IT(&htim15);
+        //send_to_usb("TIM15");
     }
 }
 
@@ -126,6 +164,41 @@ void MX_TIM2_Init(uint32_t period_ms, uint32_t period_us)
     /* Set One Pulse Mode to avoid automatic reload */
     htim2.Instance->CR1 |= TIM_CR1_OPM;
 }
+
+/**
+  * @brief TIM15 Initialization Function
+  * @param None
+  * @retval None
+  */
+void MX_TIM15_Init(uint8_t period_ms, uint8_t period_us, uint32_t counter)
+{
+    TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+    TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+    htim15.Instance = TIM15;
+    htim15.Init.Prescaler = 48 - 1;
+    htim15.Init.CounterMode = TIM_COUNTERMODE_UP;
+    htim15.Init.Period = (period_ms * 1e3) + period_us - 1;
+    htim15.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    htim15.Init.RepetitionCounter = counter;
+    htim15.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+    if (HAL_TIM_Base_Init(&htim15) != HAL_OK)
+    {
+        Error_Handler();
+    }
+    sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+    if (HAL_TIM_ConfigClockSource(&htim15, &sClockSourceConfig) != HAL_OK)
+    {
+        Error_Handler();
+    }
+    sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+    sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+    if (HAL_TIMEx_MasterConfigSynchronization(&htim15, &sMasterConfig) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
+
 
 /**
   * @brief GPIO Initialization Function

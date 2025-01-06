@@ -7,9 +7,12 @@
 
 void reset_target();
 void SystemClock_Config();
-void MX_TIM2_Init(uint32_t, uint32_t);
+void ctrl_TIM2_init(uint32_t, uint32_t);
+void ctrl_TIM15_init(uint32_t, uint32_t);
 void MX_GPIO_Init();
 void Error_Handler();
+
+#define CTRL_TIM15_MAX_PERIOD_MS    60
 
 #define B1_Pin GPIO_PIN_0
 #define B1_GPIO_Port GPIOA
@@ -62,5 +65,6 @@ void Error_Handler();
 #define GPIOC_VALUE_CFG(value) ((value & 0x07) << 10)
 
 extern TIM_HandleTypeDef htim2;
+extern TIM_HandleTypeDef htim15;
 
 #endif

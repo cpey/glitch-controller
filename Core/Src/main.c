@@ -52,9 +52,11 @@ int main(void)
     /* Initialize all configured peripherals */
     MX_GPIO_Init();
     MX_USB_DEVICE_Init();
-    MX_TIM2_Init(GLITCH_DELAY_MS, GLITCH_DELAY_US);
+    ctrl_TIM2_init(GLITCH_DELAY_MS, GLITCH_DELAY_US);
+    ctrl_TIM15_init(GLITCH_DELAY_MS, GLITCH_DELAY_US);
 
     pg_sig_set_high();
+    HAL_TIM_Base_Start_IT(&htim15);
 
     while (1)
     {

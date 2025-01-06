@@ -5,7 +5,7 @@
 
 #define PG_DAC_BYPASS
 
-#define GLITCH_DELAY_MS         1000
+#define GLITCH_DELAY_MS         100
 #define GLITCH_DELAY_US         0
 #define PG_VOLTAGE_FS           0xff
 #define GLITCH_DELAY_US_LENGTH  3

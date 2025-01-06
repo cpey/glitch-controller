@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-
 /**
  * cmd: '0x??' -> 4 chars
  * 
@@ -46,7 +45,7 @@ void process_cmd_signal(uint8_t *usb_msg, uint16_t usb_msg_len) {
 }
 
 /**
- * cmd: 
+ * cmd:
  * ms    -- '????'     -> up to 5 chars
  * ms.us -- '????.???' -> up to 9 chars
  */
@@ -75,7 +74,44 @@ void process_cmd_timer(uint8_t *usb_msg, uint16_t usb_msg_len) {
         return;
     }
     __HAL_TIM_DISABLE_IT(&htim2, TIM_IT_UPDATE);
-    MX_TIM2_Init(delay_ms, delay_us);
+    ctrl_TIM2_init(delay_ms, delay_us);
+
+    sprintf(msg, "Set timer period: %lu ms, %lu us", delay_ms, delay_us);
+    send_to_usb(msg);
+}
+
+/**
+ * cmd:
+ * ms    -- '????'     -> up to 5 chars
+ * ms.us -- '????.???' -> up to 9 chars
+ */
+void process_cmd_delay(uint8_t *usb_msg, uint16_t usb_msg_len) {
+    char msg[64];
+    uint32_t delay_us = 0;
+
+    if (usb_msg[0] == '-')
+        return;
+
+    char *ptr = strchr((char *) usb_msg, '.');
+    if (ptr != NULL) {
+        uint8_t len = (char *) usb_msg + usb_msg_len - ptr - 2;
+        if (len > GLITCH_DELAY_US_LENGTH) {
+            sprintf(msg, "Invalid decimal fraction length.");
+            send_to_usb(msg);
+            return;
+        }
+        delay_us = strtol((char *) ptr + 1, NULL, 10);
+    }
+
+    uint32_t delay_ms = strtol((char *) usb_msg, NULL, 10);
+    if (delay_ms > pow(10, GLITCH_DELAY_MS_LENGTH)) {
+        sprintf(msg, "Invalid integer part length.");
+        send_to_usb(msg);
+        return;
+    }
+    __HAL_TIM_DISABLE_IT(&htim15, TIM_IT_UPDATE);
+    ctrl_TIM15_init(delay_ms, delay_us);
+    HAL_TIM_Base_Start_IT(&htim15);
 
     sprintf(msg, "Set timer period: %lu ms, %lu us", delay_ms, delay_us);
     send_to_usb(msg);
@@ -106,6 +142,14 @@ void process_cmd_set(uint8_t *usb_msg, uint16_t usb_msg_len) {
             if (usb_msg[2] != ' ')
                 return;
             process_cmd_timer(usb_msg + 3, usb_msg_len - 3);
+            break;
+        case 'd': /* ' d ????.???' -> 12 chars (max) */
+                  /* ' d ?'        -> 5 chars (min) */
+            if (usb_msg_len < 5 || usb_msg_len > 12)
+                return;
+            if (usb_msg[2] != ' ')
+                return;
+            process_cmd_delay(usb_msg + 3, usb_msg_len - 3);
             break;
         default:
             break;
