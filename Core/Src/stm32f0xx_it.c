@@ -83,7 +83,7 @@ void SysTick_Handler(void)
 void EXTI0_1_IRQHandler(void)
 {
   led_enabled = !led_enabled;
-  reset_timer = true;
+  reset_TIM2 = true;
 
   HAL_GPIO_EXTI_IRQHandler(B1_Pin);
 }

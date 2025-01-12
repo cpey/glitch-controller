@@ -111,7 +111,6 @@ void process_cmd_delay(uint8_t *usb_msg, uint16_t usb_msg_len) {
     }
     __HAL_TIM_DISABLE_IT(&htim15, TIM_IT_UPDATE);
     ctrl_TIM15_init(delay_ms, delay_us);
-    HAL_TIM_Base_Start_IT(&htim15);
 
     sprintf(msg, "Set timer period: %lu ms, %lu us", delay_ms, delay_us);
     send_to_usb(msg);
@@ -161,11 +160,14 @@ void process_cmd_run(uint8_t *usb_msg, uint16_t usb_msg_len) {
 
     switch (arg) {
         case 'g':
-            reset_timer = true;
+            reset_TIM2 = true;
             break;
         case 'c':
             reset_target();
-            reset_timer = true;
+            reset_TIM2 = true;
+            break;
+        case 'd':
+            HAL_TIM_Base_Start_IT(&htim15);
             break;
         default:
             break;

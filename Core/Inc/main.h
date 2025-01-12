@@ -27,7 +27,7 @@ extern "C" {
 typedef enum { false, true } bool;
 
 extern bool led_enabled;
-extern bool reset_timer;
+extern bool reset_TIM2;
 
 #define USB_BUFFER_SIZE 256
 extern uint8_t usb_msg[USB_BUFFER_SIZE];

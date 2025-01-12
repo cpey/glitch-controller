@@ -29,7 +29,7 @@ uint16_t usb_msg_len = 0;
 bool usb_msg_locked = false;
 
 bool led_enabled = true;
-bool reset_timer = false;
+bool reset_TIM2 = false;
 
 void print_timer_value() {
     char display_timer[50];
@@ -56,7 +56,6 @@ int main(void)
     ctrl_TIM15_init(GLITCH_DELAY_MS, GLITCH_DELAY_US);
 
     pg_sig_set_high();
-    HAL_TIM_Base_Start_IT(&htim15);
 
     while (1)
     {
@@ -64,10 +63,10 @@ int main(void)
         if (led_enabled)
             HAL_GPIO_TogglePin(GPIOC, LD5_Pin);
 
-        if (reset_timer) {
+        if (reset_TIM2) {
 			reset_target();
-            send_to_usb("Timer reset");
-            reset_timer = false;
+            send_to_usb("TIM2 reset");
+            reset_TIM2 = false;
         }
 
         /* USER CODE BEGIN 3 */

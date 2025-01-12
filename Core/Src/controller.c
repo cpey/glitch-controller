@@ -40,19 +40,13 @@ void ctrl_TIM15_init(uint32_t period_ms, uint32_t period_us) {
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-    static int level = 0;
     if (htim == &htim2) {
         generate_glitch();
+        send_to_usb("TIM2");
     } else if (htim == &htim15) {
-        if (!level) {
-            HAL_GPIO_WritePin(TRESET_GPIO_Port, TRESET_Pin, GPIO_PIN_SET);
-            level = 1;
-        } else {
-            HAL_GPIO_WritePin(TRESET_GPIO_Port, TRESET_Pin, GPIO_PIN_RESET);
-            level = 0;
-        }
-        //HAL_TIM_Base_Stop_IT(&htim15);
-        //send_to_usb("TIM15");
+        generate_glitch();
+        HAL_TIM_Base_Stop_IT(&htim15);
+        send_to_usb("TIM15");
     }
 }
 
